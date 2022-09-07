@@ -1,4 +1,3 @@
-
 import 'package:aed_map/screens/home_screen.dart';
 import 'package:aed_map/screens/offline_screen.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -58,6 +57,7 @@ class _AppState extends State<App> {
       DeviceOrientation.portraitDown,
     ]);
     return CupertinoApp(
+      theme: const CupertinoThemeData(brightness: Brightness.light),
       debugShowCheckedModeBanner: false,
       localizationsDelegates: const [
         DefaultMaterialLocalizations.delegate,

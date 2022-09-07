@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:apple_maps_flutter/apple_maps_flutter.dart' show AppleMap, AppleMapController, BitmapDescriptor, CameraPosition, CameraUpdate;
+import 'package:apple_maps_flutter/apple_maps_flutter.dart' as mapKit;
 import 'package:cross_fade/cross_fade.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -39,7 +41,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     var position = await Store.instance.determinePosition();
     var items = await Store.instance.loadAEDs(LatLng(position.latitude, position.longitude));
     setState(() {
-      aeds = items;
+      aeds = items.take(40).toList();
       selectedAED = aeds.first;
     });
   }
@@ -61,6 +63,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         .toList();
   }
 
+  List<mapKit.Annotation> _getAppleMarkers() {
+    return aeds
+        .map((aed) => mapKit.Annotation(
+              annotationId: mapKit.AnnotationId(aed.location.latitude.toString()),
+              anchor: const Offset(0.5, -4),
+              position: mapKit.LatLng(aed.location.latitude, aed.location.longitude),
+              icon: aed.id == selectedAED!.id ? BitmapDescriptor.defaultAnnotationWithHue(100) : BitmapDescriptor.defaultAnnotation,
+              onTap: () {
+                _selectAED(aed);
+              },
+            ))
+        .cast<mapKit.Annotation>()
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     BorderRadius radius = const BorderRadius.only(
@@ -71,11 +88,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         child: aeds.isEmpty
             ? const Center(child: CircularProgressIndicator())
             : SlidingUpPanel(
+                parallaxEnabled: true,
+                parallaxOffset: 0.5,
                 controller: panel,
                 maxHeight: 500,
                 borderRadius: radius,
                 panel: Container(decoration: BoxDecoration(borderRadius: radius), child: _buildBottomPanel()),
-                body: SafeArea(top: false, child: _buildMap())));
+                body: SafeArea(top: false, child: Platform.isIOS ? _buildAppleMap() : _buildMap())));
   }
 
   Widget _buildBottomPanel() {
@@ -273,6 +292,69 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     ]);
   }
 
+  late AppleMapController appleMapController;
+
+  void _onMapCreated(AppleMapController controller) {
+    appleMapController = controller;
+  }
+
+  Widget _buildAppleMap() {
+    return FutureBuilder<LatLng>(
+        future: Store.instance.determinePosition(),
+        builder: (BuildContext context, AsyncSnapshot<LatLng> snapshot) {
+          if (snapshot.hasData || snapshot.hasError) {
+            return Column(
+              children: [
+                Flexible(
+                    child: Stack(
+                  children: [
+                    AppleMap(
+                      onMapCreated: _onMapCreated,
+                      // myLocationEnabled: true,
+                      annotations: _getAppleMarkers().toSet(),
+                      initialCameraPosition: CameraPosition(target: mapKit.LatLng(aeds.first.location.latitude, aeds.first.location.longitude), zoom: 14),
+                    ),
+                    SafeArea(
+                        child: Padding(
+                      padding: const EdgeInsets.only(left: 16, top: 8, right: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Mapa AED', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 32)),
+                              Text('${aeds.length} AED dostępnych', style: const TextStyle(fontSize: 14))
+                            ],
+                          ),
+                          Column(
+                            children: [
+                              GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: () {
+                                  _showAboutDialog();
+                                },
+                                child: const Card(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(8.0),
+                                    child: Icon(CupertinoIcons.gear),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        ],
+                      ),
+                    )),
+                  ],
+                )),
+              ],
+            );
+          }
+          return const Center(child: CircularProgressIndicator());
+        });
+  }
+
   Widget _buildMap() {
     return FutureBuilder<LatLng>(
         future: Store.instance.determinePosition(),
@@ -348,7 +430,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       selectedAED = aed;
     });
     panel.open();
-    _animatedMapMove(selectedAED!.location, 14);
+    if (Platform.isAndroid) {
+      _animatedMapMove(selectedAED!.location, 14);
+    } else {
+      appleMapController.animateCamera(CameraUpdate.newLatLng(mapKit.LatLng(selectedAED!.location.latitude, selectedAED!.location.longitude)));
+    }
   }
 
   void _animatedMapMove(LatLng destLocation, double destZoom) {
